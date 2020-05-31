@@ -22,13 +22,11 @@ def get_euler(x, y, z, w):
 
 
 def update_v(msg):
-    """Obtain velocity information"""
     global v
     v = np.sqrt(msg.twist.linear.x**2 + msg.twist.linear.y**2)
 
 
 def publisher(pos):
-    """Calculates pose covariance from the first 100 samples. Publishes pose and velocity while also calculating estimated velocity variance"""
     global samples, x, y, z, roll, pitch, yaw, cov, v, i, t_prev
     if samples < 100:
         x.append(pos.pose.position.x)
@@ -44,21 +42,17 @@ def publisher(pos):
     	cov = np.diag([np.var(x), np.var(y), np.var(z), np.var(roll), np.var(pitch), np.var(yaw)])
 	t_prev = rospy.Time().now().to_sec()
     else:
-	if i == 1:
-            i = 0
-            pub = rospy.Publisher('/ekf_lidar', Odometry, queue_size=1)
-            msg = Odometry()
-	    t_new = rospy.Time().now().to_sec()
-	    t = t_new - t_prev
-	    t_prev = t_new
-            msg.pose.pose.position = pos.pose.position
-            msg.pose.pose.orientation = pos.pose.orientation
-            msg.pose.covariance = cov.ravel().tolist()
-            msg.twist.twist.linear.x = v
-            msg.twist.covariance = [np.sqrt(2*cov[0, 0]**2+2*cov[1, 1]**2)/t] + [0]*35
-            pub.publish(msg)
-	elif i < 1:
-	    i += 1
+        pub = rospy.Publisher('/ekf_lidar', Odometry, queue_size=1)
+        msg = Odometry()
+	t_new = rospy.Time().now().to_sec()
+	t = t_new - t_prev
+	t_prev = t_new
+        msg.pose.pose.position = pos.pose.position
+        msg.pose.pose.orientation = pos.pose.orientation
+        msg.pose.covariance = cov.ravel().tolist()
+        msg.twist.twist.linear.x = v
+        msg.twist.covariance = [np.sqrt(2*cov[0, 0]**2+2*cov[1, 1]**2)/t] + [0]*35
+        pub.publish(msg)
 
 
 def main():
@@ -68,11 +62,10 @@ def main():
 
 
 # Node initiliasation
-rospy.init_node('ekf_observer_lidar')
+rospy.init_node('ekf_observer_publisher2')
 
 # Global variables
 samples = 0
-i = 1
 x = []
 y = []
 z = []

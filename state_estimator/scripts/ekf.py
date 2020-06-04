@@ -276,12 +276,6 @@ if __name__ == '__main__':
     try:
 	old_time = rospy.Time().now().to_sec()
     	while not rospy.is_shutdown():
-	    if imu:
-	    	rospy.Subscriber("/an_device/Imu", Imu, callback_imu, queue_size=1)
-	    if gnss:
-                rospy.Subscriber("/ekf_gnss", Odometry, callback_gnss, queue_size=1)
-	    if lidar:
-                rospy.Subscriber("/ekf_lidar", Odometry, callback_lidar, queue_size=1)
 	    if started:
                 new_time = rospy.Time().now().to_sec()
                 dt = new_time-old_time
@@ -292,6 +286,12 @@ if __name__ == '__main__':
 		    v = None
                 EKF.finish_loop()
                 old_time = new_time
+        if imu:
+	    	rospy.Subscriber("/an_device/Imu", Imu, callback_imu, queue_size=1)
+	    if gnss:
+                rospy.Subscriber("/ekf_gnss", Odometry, callback_gnss, queue_size=1)
+	    if lidar:
+                rospy.Subscriber("/ekf_lidar", Odometry, callback_lidar, queue_size=1)
 	    lidar_callback_done = False # Commented out -> Dead reckoning test
 	    rate.sleep()
     except rospy.ROSInterruptException:

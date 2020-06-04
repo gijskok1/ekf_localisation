@@ -9,7 +9,7 @@ from sensor_msgs.msg import NavSatFix
 
 def update_cov(msg):
     global cov
-    cov = np.diag([msg.position_covariance[0], msg.position_covariance[4], msg.position_covariance[8], msg.position_covariance[8]/(1.56**2), 0.02, msg.position_covariance[0]/(1.56**2)])
+    cov = np.diag([msg.position_covariance[0], msg.position_covariance[4], msg.position_covariance[8], 3e-6, 3e-6, 3e-6])
 
 
 def update_v(msg):
@@ -18,19 +18,16 @@ def update_v(msg):
    
 
 def publisher(pos):
-    global cov, v, i, t_prev
+    global cov, v, i
     if (cov is not None) and (i == 1):
         i = 0
         pub = rospy.Publisher('/ekf_gnss', Odometry, queue_size=1)
         msg = Odometry()
-	t_new = rospy.Time().now().to_sec()
-	t = t_new - t_prev
-	t_prev = t_new
 	msg.pose.pose.position = pos.pose.position
         msg.pose.pose.orientation = pos.pose.orientation
         msg.pose.covariance = cov.ravel().tolist()
         msg.twist.twist.linear.x = v
-        msg.twist.covariance = [np.sqrt(2*cov[0, 0]**2+2*cov[1, 1]**2)/t] + [0]*35
+        msg.twist.covariance = [0.005**2] + [0]*35
         pub.publish(msg)
     elif i < 1:
         i += 1
@@ -50,7 +47,6 @@ rospy.init_node('ekf_observer_publisher')
 cov = None
 v = 0
 i = 1
-t_prev = rospy.Time().now().to_sec()
 
 if __name__ == '__main__':
     try:

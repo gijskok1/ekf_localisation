@@ -286,7 +286,7 @@ if __name__ == '__main__':
 		    v = None
                 EKF.finish_loop()
                 old_time = new_time
-        if imu:
+            if imu:
 	    	rospy.Subscriber("/an_device/Imu", Imu, callback_imu, queue_size=1)
 	    if gnss:
                 rospy.Subscriber("/ekf_gnss", Odometry, callback_gnss, queue_size=1)

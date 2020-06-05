@@ -47,28 +47,26 @@ def normalise_angle(angle):
 
 
 def callback_imu(msg):
-    """Updates angular velocities and linear accelerations via IMU measurement"""
-    global omega, a
+    """Updates orientation, angular velocities and linear accelerations via IMU measurement"""
+    global q, omega, a
+    q = [msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w]
     omega = [-msg.angular_velocity.x, -msg.angular_velocity.y, -msg.angular_velocity.z]
     a = [msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z]
 
 
 def callback_gnss(msg):
-    """Updates velocity and orientation via GNSS measurement"""
-    global v, q, var_v, var_angle
+    """Updates velocity via GNSS measurement"""
+    global v, var_v
     v = msg.twist.twist.linear.x
-    q = (msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z,
-         msg.pose.pose.orientation.w)
     var_v = msg.twist.covariance[0]
-    var_angle = (msg.pose.covariance[21], msg.pose.covariance[28], msg.pose.covariance[35]) 
-
+    
 
 def callback_lidar(msg):
     """Updates or starts Kalman filter via LiDAR measurement"""
     global EKF, started, lidar_callback_done, old_time
-    p = (msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z)
-    o = (msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z,
-         msg.pose.pose.orientation.w)
+    p = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
+    o = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z,
+         msg.pose.pose.orientation.w]
     cov = list(msg.pose.covariance)
     v = msg.twist.twist.linear.x
     cov_v = msg.twist.covariance[0]
@@ -91,7 +89,8 @@ class StateEstimator:
         r, p, y = get_euler(O[0], O[1], O[2], O[3])
 
         # Tuning variables
-        self.var_u = np.diag([0.0084, 0.0024, 0.0022, 0.0013])**2 # (a, phi_dot, theta_dot psi_dot)
+        self.var_u = np.diag([0.0084, 0.002, 0.002, 0.002, 0.0024, 0.0022, 0.0013])**2 # (a, phi, theta, psi, phi_dot, theta_dot psi_dot)
+        self.var_u2 = np.diag([0.005, 0.0084, 0.002, 0.002, 0.002, 0.0024, 0.0022, 0.0013])**2 # (v, a, phi, theta, psi, phi_dot, theta_dot psi_dot)
         self.var_a = np.diag([4.784, 0.10697, 0.4989, 0.36137, 0.10051])**2 # (j, z_dot, phi_ddot, theta_ddot psi_ddot)
 
         # Initialisation of matrices, vectors and startup boolean
@@ -105,23 +104,26 @@ class StateEstimator:
         self.starting_up = True
 
 
-    def predict(self, a, omega, t):
+    def predict(self, a, q, omega, t):
         """Kalman filter prediction via IMU measurements"""
+	# Get orientation 
+	phi, theta, psi = get_euler(q[0], q[1], q[2], q[3])
+
         # Rear odometric model prediction
-        self.X_est = self.X_prev + np.matrix([[(self.X_prev[6, 0]*t+a[0]*t**2/2)*cos(self.X_prev[5, 0]+omega[2]*t/2)],
-                                              [(self.X_prev[6, 0]*t+a[0]*t**2/2)*sin(self.X_prev[5, 0]+omega[2]*t/2)],
-                                              [0],
-                                              [omega[0]*t],
-                                              [omega[1]*t],
-                                              [omega[2]*t],
-                                              [a[0]*t]])
+        self.X_est = np.matrix([[self.X_prev[0, 0]+(self.X_prev[6, 0]*t+a[0]*t**2/2)*cos(psi+omega[2]*t/2)],
+                                [self.X_prev[1, 0]+(self.X_prev[6, 0]*t+a[0]*t**2/2)*sin(psi+omega[2]*t/2)],
+                                [self.X_prev[2, 0]+0],
+                                [phi+omega[0]*t],
+                                [theta+omega[1]*t],
+                                [psi+omega[2]*t],
+                                [self.X_prev[6, 0]+a[0]*t]])
 
         # Normalise yaw angle
         self.X_est[5, 0] = normalise_angle(self.X_est[5, 0])
 
         # Jacobian w.r.t state variables
-        F_x = np.matrix([[1, 0, 0, 0, 0, -(t*self.X_prev[6, 0]+a[0]*t**2/2)*sin(self.X_prev[5, 0]+omega[2]*t/2), t*cos(self.X_prev[5, 0]+omega[2]*t/2)],
-                         [0, 1, 0, 0, 0, (t*self.X_prev[6, 0]+a[0]*t**2/2)*cos(self.X_prev[5, 0]+omega[2]*t/2), t*sin(self.X_prev[5, 0]+omega[2]*t/2)],
+        F_x = np.matrix([[1, 0, 0, 0, 0, -(t*self.X_prev[6, 0]+a[0]*t**2/2)*sin(psi+omega[2]*t/2), t*cos(psi+omega[2]*t/2)],
+                         [0, 1, 0, 0, 0, (t*self.X_prev[6, 0]+a[0]*t**2/2)*cos(psi+omega[2]*t/2), t*sin(psi+omega[2]*t/2)],
                          [0, 0, 1, 0, 0, 0, 0],
                          [0, 0, 0, 1, 0, 0, 0],
                          [0, 0, 0, 0, 1, 0, 0],
@@ -129,13 +131,13 @@ class StateEstimator:
                          [0, 0, 0, 0, 0, 0, 1]])
 
         # Jacobian w.r.t input variables
-        F_u = np.matrix([[t**2*cos(self.X_prev[5, 0]+omega[2]*t/2)/2, 0, 0, -((a[0]*t**2/2+self.X_prev[6, 0]*t)*sin(self.X_prev[5, 0]+omega[2]*t/2))/2],
-                         [t**2*sin(self.X_prev[5, 0]+omega[2]*t/2)/2, 0, 0, ((a[0]*t**2/2+self.X_prev[6, 0]*t)*cos(self.X_prev[5, 0]+omega[2]*t/2))/2],
-                         [0, 0, 0, 0],
-                         [0, t, 0, 0],
-                         [0, 0, t, 0],
-                         [0, 0, 0, t],
-                         [t, 0, 0, 0]])
+        F_u = np.matrix([[t**2*cos(psi+omega[2]*t/2)/2, 0, 0, -((a[0]*t**2/2+self.X_prev[6, 0]*t)*sin(psi+omega[2]*t/2)), 0, 0, -((a[0]*t**2/2+self.X_prev[6, 0]*t)*sin(psi+omega[2]*t/2))/2],
+                         [t**2*sin(psi+omega[2]*t/2)/2, 0, 0, ((a[0]*t**2/2+self.X_prev[6, 0]*t)*cos(psi+omega[2]*t/2)), 0, 0, ((a[0]*t**2/2+self.X_prev[6, 0]*t)*cos(psi+omega[2]*t/2))/2],
+                         [0, 0, 0, 0, 0, 0, 0],
+                         [0, 1, 0, 0, t, 0, 0],
+                         [0, 0, 1, 0, 0, t, 0],
+                         [0, 0, 0, 1, 0, 0, t],
+                         [t, 0, 0, 0, 0, 0, 0]])
 
         # Jacobian w.r.t higher order motion variables
         G = np.matrix([[t**3*cos(self.X_prev[5, 0]+omega[2]*t/2)/6, 0, 0, 0, -((a[0]*t**2/2+self.X_prev[6, 0]*t)*sin(self.X_prev[5, 0]+omega[2]*t/2))/4],
@@ -151,12 +153,12 @@ class StateEstimator:
         self.starting_up = False
 
 
-    def predict_gnss(self, v, a, q, omega, t, var_v, var_angle):
+    def predict_gnss(self, v, a, q, omega, t):
         """Kalman filter prediction via IMU and GNSS measurements"""
 	# Avoid GNSS drift by setting velocity threshold
 	if v < 0.06:
 	    v = 0
-	
+
 	# Get orientation 
 	phi, theta, psi = get_euler(q[0], q[1], q[2], q[3])
 
@@ -171,9 +173,6 @@ class StateEstimator:
 
         # Normalise yaw angle
         self.X_est[5, 0] = normalise_angle(self.X_est[5, 0])
-
-	# New tuning variables
-	self.var_u2 = np.diag([var_v, 0.0084**2, var_angle[0], var_angle[1], var_angle[2], 0.0024**2, 0.0022**2, 0.0013**2])
 
         # Jacobian w.r.t state variables
         F_x = np.matrix([[1, 0, 0, 0, 0, -(t*v+a[0]*t**2/2)*sin(psi+omega[2]*t/2), t*cos(psi+omega[2]*t/2)],
@@ -228,7 +227,6 @@ class StateEstimator:
             self.P_est = (np.eye(7)-K*self.H)*self.P_est
 
 
-
     def finish_loop(self):
         """Publish estimated position and orientation and preparation for next cycle"""
         pub = rospy.Publisher('/ekf_pose', PoseStamped, queue_size=10)
@@ -251,9 +249,6 @@ q = None
 omega = [0, 0, 0]
 v = None
 a = [0, 0, 0]
-
-var_v = 0
-var_angle = None
 
 old_time = 0
 new_time = 0
@@ -280,13 +275,13 @@ if __name__ == '__main__':
                 new_time = rospy.Time().now().to_sec()
                 dt = new_time-old_time
 		if v is None:
-                    EKF.predict(a, omega, dt)
+                    EKF.predict(a, q, omega, dt)
 		else:
-		    EKF.predict_gnss(v, a, q, omega, dt, var_v, var_angle)
+		    EKF.predict_gnss(v, a, q, omega, dt)
 		    v = None
                 EKF.finish_loop()
                 old_time = new_time
-            if imu:
+	    if imu:
 	    	rospy.Subscriber("/an_device/Imu", Imu, callback_imu, queue_size=1)
 	    if gnss:
                 rospy.Subscriber("/ekf_gnss", Odometry, callback_gnss, queue_size=1)

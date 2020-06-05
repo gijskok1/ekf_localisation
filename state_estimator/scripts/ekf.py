@@ -56,9 +56,8 @@ def callback_imu(msg):
 
 def callback_gnss(msg):
     """Updates velocity via GNSS measurement"""
-    global v, var_v
-    v = msg.twist.twist.linear.x
-    var_v = msg.twist.covariance[0]
+    global v
+    v = np.sqrt(msg.linear.x**2 + msg.linear.y**2)
     
 
 def callback_lidar(msg):
@@ -97,7 +96,6 @@ class StateEstimator:
         self.X_prev = np.matrix([[P[0]], [P[1]], [P[2]], [r], [p], [y], [v]])
         self.P_prev = np.diag([cov[0], cov[7], cov[14], cov[21], cov[28], cov[35], cov_v])
         self.H = np.eye(7)
-	self.H_gnss = self.H
             
         self.X_est = None
         self.P_est = None
@@ -284,7 +282,7 @@ if __name__ == '__main__':
 	    if imu:
 	    	rospy.Subscriber("/an_device/Imu", Imu, callback_imu, queue_size=1)
 	    if gnss:
-                rospy.Subscriber("/ekf_gnss", Odometry, callback_gnss, queue_size=1)
+                rospy.Subscriber("/an_device/Twist", Twist, callback_gnss, queue_size=1)
 	    if lidar:
                 rospy.Subscriber("/ekf_lidar", Odometry, callback_lidar, queue_size=1)
 	    lidar_callback_done = False # Commented out -> Dead reckoning test

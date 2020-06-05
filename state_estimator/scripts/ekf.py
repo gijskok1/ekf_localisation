@@ -47,25 +47,25 @@ def normalise_angle(angle):
 
 
 def callback_imu(msg):
-    """Updates orientation, angular velocities and linear accelerations via IMU measurement"""
-    global q, omega, a
-    q = [msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w]
+    """Updates angular velocities and linear accelerations via IMU measurement"""
+    global omega, a
     omega = [-msg.angular_velocity.x, -msg.angular_velocity.y, -msg.angular_velocity.z]
     a = [msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z]
 
 
 def callback_gnss(msg):
     """Updates velocity via GNSS measurement"""
-    global v
-    v = np.sqrt(msg.linear.x**2 + msg.linear.y**2)
+    global v, q
+    v = msg.twist.twist.linear.x
+    q = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
+    var_v = msg.twist.covariance[0]
     
 
 def callback_lidar(msg):
     """Updates or starts Kalman filter via LiDAR measurement"""
     global EKF, started, lidar_callback_done, old_time
     p = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
-    o = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z,
-         msg.pose.pose.orientation.w]
+    o = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
     cov = list(msg.pose.covariance)
     v = msg.twist.twist.linear.x
     cov_v = msg.twist.covariance[0]
@@ -88,7 +88,7 @@ class StateEstimator:
         r, p, y = get_euler(O[0], O[1], O[2], O[3])
 
         # Tuning variables
-        self.var_u = np.diag([0.0084, 0.002, 0.002, 0.002, 0.0024, 0.0022, 0.0013])**2 # (a, phi, theta, psi, phi_dot, theta_dot psi_dot)
+        self.var_u = np.diag([0.0084, 0.0024, 0.0022, 0.0013])**2 # (a, phi_dot, theta_dot psi_dot)
         self.var_u2 = np.diag([0.005, 0.0084, 0.002, 0.002, 0.002, 0.0024, 0.0022, 0.0013])**2 # (v, a, phi, theta, psi, phi_dot, theta_dot psi_dot)
         self.var_a = np.diag([4.784, 0.10697, 0.4989, 0.36137, 0.10051])**2 # (j, z_dot, phi_ddot, theta_ddot psi_ddot)
 
@@ -102,26 +102,23 @@ class StateEstimator:
         self.starting_up = True
 
 
-    def predict(self, a, q, omega, t):
+    def predict(self, a, omega, t):
         """Kalman filter prediction via IMU measurements"""
-	# Get orientation 
-	phi, theta, psi = get_euler(q[0], q[1], q[2], q[3])
-
         # Rear odometric model prediction
-        self.X_est = np.matrix([[self.X_prev[0, 0]+(self.X_prev[6, 0]*t+a[0]*t**2/2)*cos(psi+omega[2]*t/2)],
-                                [self.X_prev[1, 0]+(self.X_prev[6, 0]*t+a[0]*t**2/2)*sin(psi+omega[2]*t/2)],
-                                [self.X_prev[2, 0]+0],
-                                [phi+omega[0]*t],
-                                [theta+omega[1]*t],
-                                [psi+omega[2]*t],
-                                [self.X_prev[6, 0]+a[0]*t]])
+        self.X_est = self.X_prev + np.matrix([[(self.X_prev[6, 0]*t+a[0]*t**2/2)*cos(self.X_prev[5, 0]+omega[2]*t/2)],
+                                              [(self.X_prev[6, 0]*t+a[0]*t**2/2)*sin(self.X_prev[5, 0]+omega[2]*t/2)],
+                                              [0],
+                                              [omega[0]*t],
+                                              [omega[1]*t],
+                                              [omega[2]*t],
+                                              [a[0]*t]])
 
         # Normalise yaw angle
         self.X_est[5, 0] = normalise_angle(self.X_est[5, 0])
 
         # Jacobian w.r.t state variables
-        F_x = np.matrix([[1, 0, 0, 0, 0, -(t*self.X_prev[6, 0]+a[0]*t**2/2)*sin(psi+omega[2]*t/2), t*cos(psi+omega[2]*t/2)],
-                         [0, 1, 0, 0, 0, (t*self.X_prev[6, 0]+a[0]*t**2/2)*cos(psi+omega[2]*t/2), t*sin(psi+omega[2]*t/2)],
+        F_x = np.matrix([[1, 0, 0, 0, 0, -(t*self.X_prev[6, 0]+a[0]*t**2/2)*sin(self.X_prev[5, 0]+omega[2]*t/2), t*cos(self.X_prev[5, 0]+omega[2]*t/2)],
+                         [0, 1, 0, 0, 0, (t*self.X_prev[6, 0]+a[0]*t**2/2)*cos(self.X_prev[5, 0]+omega[2]*t/2), t*sin(self.X_prev[5, 0]+omega[2]*t/2)],
                          [0, 0, 1, 0, 0, 0, 0],
                          [0, 0, 0, 1, 0, 0, 0],
                          [0, 0, 0, 0, 1, 0, 0],
@@ -129,13 +126,13 @@ class StateEstimator:
                          [0, 0, 0, 0, 0, 0, 1]])
 
         # Jacobian w.r.t input variables
-        F_u = np.matrix([[t**2*cos(psi+omega[2]*t/2)/2, 0, 0, -((a[0]*t**2/2+self.X_prev[6, 0]*t)*sin(psi+omega[2]*t/2)), 0, 0, -((a[0]*t**2/2+self.X_prev[6, 0]*t)*sin(psi+omega[2]*t/2))/2],
-                         [t**2*sin(psi+omega[2]*t/2)/2, 0, 0, ((a[0]*t**2/2+self.X_prev[6, 0]*t)*cos(psi+omega[2]*t/2)), 0, 0, ((a[0]*t**2/2+self.X_prev[6, 0]*t)*cos(psi+omega[2]*t/2))/2],
-                         [0, 0, 0, 0, 0, 0, 0],
-                         [0, 1, 0, 0, t, 0, 0],
-                         [0, 0, 1, 0, 0, t, 0],
-                         [0, 0, 0, 1, 0, 0, t],
-                         [t, 0, 0, 0, 0, 0, 0]])
+        F_u = np.matrix([[t**2*cos(self.X_prev[5, 0]+omega[2]*t/2)/2, 0, 0, -((a[0]*t**2/2+self.X_prev[6, 0]*t)*sin(self.X_prev[5, 0]+omega[2]*t/2))/2],
+                         [t**2*sin(self.X_prev[5, 0]+omega[2]*t/2)/2, 0, 0, ((a[0]*t**2/2+self.X_prev[6, 0]*t)*cos(self.X_prev[5, 0]+omega[2]*t/2))/2],
+                         [0, 0, 0, 0],
+                         [0, t, 0, 0],
+                         [0, 0, t, 0],
+                         [0, 0, 0, t],
+                         [t, 0, 0, 0]])
 
         # Jacobian w.r.t higher order motion variables
         G = np.matrix([[t**3*cos(self.X_prev[5, 0]+omega[2]*t/2)/6, 0, 0, 0, -((a[0]*t**2/2+self.X_prev[6, 0]*t)*sin(self.X_prev[5, 0]+omega[2]*t/2))/4],
@@ -273,7 +270,7 @@ if __name__ == '__main__':
                 new_time = rospy.Time().now().to_sec()
                 dt = new_time-old_time
 		if v is None:
-                    EKF.predict(a, q, omega, dt)
+                    EKF.predict(a, omega, dt)
 		else:
 		    EKF.predict_gnss(v, a, q, omega, dt)
 		    v = None
@@ -282,7 +279,7 @@ if __name__ == '__main__':
 	    if imu:
 	    	rospy.Subscriber("/an_device/Imu", Imu, callback_imu, queue_size=1)
 	    if gnss:
-                rospy.Subscriber("/an_device/Twist", Twist, callback_gnss, queue_size=1)
+                rospy.Subscriber("/ekf_gnss", Odometry, callback_gnss, queue_size=1)
 	    if lidar:
                 rospy.Subscriber("/ekf_lidar", Odometry, callback_lidar, queue_size=1)
 	    lidar_callback_done = False # Commented out -> Dead reckoning test

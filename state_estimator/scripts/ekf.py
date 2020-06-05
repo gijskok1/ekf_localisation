@@ -269,7 +269,7 @@ lidar_callback_done = False
 
 # Initialise node
 rospy.init_node('state_estimator')
-rate = rospy.Rate(21)
+rate = rospy.Rate(20)
 
 
 if __name__ == '__main__':

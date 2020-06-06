@@ -32,7 +32,7 @@ def publisher(pos):
         x.append(pos.pose.position.x)
         y.append(pos.pose.position.y)
         z.append(pos.pose.position.z)
-        get_roll, get_pitch, get_yaw = get_euler(pos.pose.orientation.z, pos.pose.orientation.y, 
+        get_roll, get_pitch, get_yaw = get_euler(pos.pose.orientation.x, pos.pose.orientation.y, 
         pos.pose.orientation.z, pos.pose.orientation.w)
         roll.append(get_roll)
         pitch.append(get_pitch)

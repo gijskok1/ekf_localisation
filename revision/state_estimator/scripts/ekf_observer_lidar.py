@@ -27,7 +27,7 @@ def update_v(msg):
 
 
 def publisher(pos):
-    global samples, x, y, z, roll, pitch, yaw, cov, v, i, t_prev
+    global samples, x, y, z, roll, pitch, yaw, cov, v, i, x_pos1, y_pos1, x_pos2, y_pos2, t_prev
     if samples < 100:
         x.append(pos.pose.position.x)
         y.append(pos.pose.position.y)
@@ -41,17 +41,26 @@ def publisher(pos):
     elif cov is None:
     	cov = np.diag([np.var(x), np.var(y), np.var(z), np.var(roll), np.var(pitch), np.var(yaw)])
 	t_prev = rospy.Time().now().to_sec()
+	x_pos1 = pos.pose.position.x
+	y_pos1 = pos.pose.position.y
     else:
-        pub = rospy.Publisher('/ekf_lidar', Odometry, queue_size=1)
-        msg = Odometry()
 	t_new = rospy.Time().now().to_sec()
 	t = t_new - t_prev
 	t_prev = t_new
+	if x_pos2 != None and y_pos2 != None:
+	    x_pos1 = x_pos2
+	    y_pos1 = y_pos2
+	x_pos2 = pos.pose.position.x
+	y_pos2 = pos.pose.position.y
+	var_v = (2*cov[0, 0]*(x_pos1-x_pos2)**2)/(t**2*((x_pos1-x_pos2)**2+(y_pos1-y_pos2)**2))+(2*cov[1, 1]*(y_pos1-y_pos2)**2)/(t**2*((x_pos1-x_pos2)**2+(y_pos1-y_pos2)**2))	
+
+        pub = rospy.Publisher('/ekf_lidar', Odometry, queue_size=1)
+        msg = Odometry()
         msg.pose.pose.position = pos.pose.position
         msg.pose.pose.orientation = pos.pose.orientation
         msg.pose.covariance = cov.ravel().tolist()
         msg.twist.twist.linear.x = v
-        msg.twist.covariance = [np.sqrt(2*cov[0, 0]**2+2*cov[1, 1]**2)/t] + [0]*35
+        msg.twist.covariance = [var_v] + [0]*35
         pub.publish(msg)
 
 
@@ -62,7 +71,7 @@ def main():
 
 
 # Node initiliasation
-rospy.init_node('ekf_observer_publisher2')
+rospy.init_node('ekf_lidar_publisher')
 
 # Global variables
 samples = 0
@@ -73,6 +82,10 @@ roll = []
 pitch = []
 yaw = []
 cov = None
+x_pos1 = None
+y_pos1 = None
+x_pos2 = None 
+y_pos2 = None
 v = 0
 t_prev = 0
 

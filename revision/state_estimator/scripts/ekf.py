@@ -57,15 +57,19 @@ def callback_imu(msg):
 
 def callback_gnss(msg):
     """Updates deltas, velocity and orientation via GNSS measurement"""
-    global v, dx, dy, var_dx, var_dy, q, x_pos1, x_pos2, y_pos1, y_pos2, x_var1, x_var2, y_var1, y_var2, gnss_callback_done
+    global v, dx, dy, var_dx, var_dy, q, x_pos1, x_pos2, y_pos1, y_pos2, x_var1, x_var2, y_var1, y_var2, t_gnss_new, t_gnss_old, gnss_callback_done
     if not gnss_callback_done:
 	gnss_callback_done = True
+	t_gnss_new = rospy.Time().now().to_sec()
+	dt = t_gnss_new-t_gnss_old
 	# Calculate dx and dy and their variances
-	if x_pos1 == None:
+	if x_pos1 == None or (dt >= 0.08):
 	    x_pos1 = msg.pose.pose.position.x
 	    y_pos1 = msg.pose.pose.position.y
 	    x_var1 = msg.pose.covariance[0]
 	    y_var1 = msg.pose.covariance[7]
+	    x_pos2 = None
+	    y_pos2 = None
     	elif x_pos2 == None:
 	    x_pos2 = msg.pose.pose.position.x
 	    y_pos2 = msg.pose.pose.position.y
@@ -84,13 +88,14 @@ def callback_gnss(msg):
 	    y_var2 = msg.pose.covariance[7]
 	    var_dx = x_var2 + x_var1
 	    var_dy = y_var2 + y_var1
-
+	
+	t_gnss_old = t_gnss_new
 	v = msg.twist.twist.linear.x
 	q = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
     
 
 def callback_lidar(msg):
-    """Updates or starts Kalman filter via LiDAR measurement"""
+    """Updates or starts Kalman filter via LiDAR measurements"""
     global EKF, started, lidar_callback_done, old_time
     p = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
     o = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
@@ -178,10 +183,10 @@ class StateEstimator:
 
     def predict_gnss(self, dx, dy, v, a, q, omega, var_dx, var_dy, t): 
         """Kalman filter prediction via IMU and GNSS measurements"""
-	# Avoid GNSS drift by setting displacement and velocity threshold
-	if abs(dx) < 0.002:
+	# Avoid GNSS drift by setting displacement and velocity thresholds
+	if abs(dx) < 0.005:
 	    dx = 0
-	if abs(dy) < 0.002:
+	if abs(dy) < 0.005:
 	    dy = 0
 	if v < 0.06:
 	    v = 0
@@ -290,12 +295,9 @@ y_pos2 = None
 
 old_time = 0
 new_time = 0
+t_gnss_new = 0 
+t_gnss_old = 0
 started = False
-
-# Specify used sensors
-gnss = True
-lidar = True
-imu = True
 
 # Quick fix variable
 lidar_callback_done = False
@@ -322,15 +324,14 @@ if __name__ == '__main__':
 		    dy = None
                 EKF.finish_loop()
                 old_time = new_time
-	    if imu:
-	    	rospy.Subscriber("/an_device/Imu", Imu, callback_imu, queue_size=1)
-	    if gnss:
-                rospy.Subscriber("/ekf_gnss", Odometry, callback_gnss, queue_size=1)
-	    if lidar:
-                rospy.Subscriber("/ekf_lidar", Odometry, callback_lidar, queue_size=1)
+	    rospy.Subscriber("/an_device/Imu", Imu, callback_imu, queue_size=1)
+            rospy.Subscriber("/ekf_gnss", Odometry, callback_gnss, queue_size=1)
+            rospy.Subscriber("/ekf_lidar", Odometry, callback_lidar, queue_size=1)
+
 	    lidar_callback_done = False # Commented out -> Dead reckoning test
 	    gnss_callback_done = False
 	    imu_callback_done = False
+
 	    rate.sleep()
     except rospy.ROSInterruptException:
         pass

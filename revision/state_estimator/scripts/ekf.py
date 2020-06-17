@@ -122,7 +122,7 @@ class StateEstimator:
 
         # Tuning variables
         self.var_u = np.diag([0.0084, 0.0024, 0.0022, 0.0013])**2 # (a, phi_dot, theta_dot psi_dot)
-        self.var_u2 = np.diag([1, 1, 0.005, 0.0084, 0.002, 0.002, 0.002, 0.0024, 0.0022, 0.0013])**2 # (dx placeholder, dy placeholder, v, a, phi, theta, psi, phi_dot, theta_dot psi_dot)
+        self.var_u2 = np.diag([1, 1, 0.0707, 0.0084, 0.0447, 0.0447, 0.0447, 0.0024, 0.0022, 0.0013])**2 # (dx placeholder, dy placeholder, v, a, phi, theta, psi, phi_dot, theta_dot psi_dot)
         self.var_a = np.diag([4.784, 0.10697, 0.4989, 0.36137, 0.10051])**2 # (j, z_dot, phi_ddot, theta_ddot psi_ddot)
 
         # Initialisation of matrices, vectors and startup boolean

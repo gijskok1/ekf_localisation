@@ -1,5 +1,5 @@
 # Quick summary
-This repository contains 2 versions of the localisation EKF for the BEP "Sensor fusion for self-driving vehicle localisation". The revision contains the latest version. This contains a GNSS merging node, LiDAR merging node, and EKF node.
+This repository contains the localisation EKF for the BEP "Sensor fusion for self-driving vehicle localisation". This ROS package contains a GNSS merging node, LiDAR merging node, and EKF node.
 
 The scripts are written in Python 2. The only library used is numpy.
 

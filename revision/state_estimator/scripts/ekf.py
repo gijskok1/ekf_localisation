@@ -62,7 +62,7 @@ def callback_gnss(msg):
 	gnss_callback_done = True
 	t_gnss_new = rospy.Time().now().to_sec()
 	dt = t_gnss_new-t_gnss_old
-	# Calculate dx and dy and their variances
+	# Calculate dx and dy and their variances. Also checks for outages and restarts the procedure if needed
 	if x_pos1 == None or (dt >= 0.08):
 	    x_pos1 = msg.pose.pose.position.x
 	    y_pos1 = msg.pose.pose.position.y
@@ -175,7 +175,8 @@ class StateEstimator:
                        [0, 0, 0, t**2/2, 0],
                        [0, 0, 0, 0, t**2/2],
                        [t**2/2, 0, 0, 0, 0]])
-
+        
+        # Prediction noise calculation
         Q = F_u*self.var_u*F_u.T+G*self.var_a*G.T
         self.P_est = F_x*self.P_prev*F_x.T+Q
         self.starting_up = False
@@ -231,6 +232,7 @@ class StateEstimator:
                        [0, 0, 0, 0, t**2/2],
                        [t**2/2, 0, 0, 0, 0]])
 
+        # Prediction noise calculation
         Q = F_u*self.var_u2*F_u.T+G*self.var_a*G.T
         self.P_est = F_x*self.P_prev*F_x.T+Q
         self.starting_up = False
@@ -299,7 +301,7 @@ t_gnss_new = 0
 t_gnss_old = 0
 started = False
 
-# Quick fix variable
+# Quick fix variables
 lidar_callback_done = False
 gnss_callback_done = False
 imu_callback_done = False
